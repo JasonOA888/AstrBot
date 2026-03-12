@@ -129,13 +129,21 @@ def split_history(
 
     # Search backward from split_index to find the first user message
     # This ensures recent_messages starts with a user message (complete turn)
+    original_split = split_index
     while split_index > 0 and non_system_messages[split_index].role != "user":
-        # TODO: +=1 or -=1 ? calculate by tokens
         split_index -= 1
 
-    # If we couldn't find a user message, keep all messages as recent
+    # FIX: If we couldn't find a user message, don't pollute context with all messages
+    # Instead, force a split at original position to prevent context overflow
+    # This addresses #6038 - historical context pollution causing tool loops
     if split_index == 0:
-        return system_messages, [], non_system_messages
+        # Reset to original split and try to find assistant boundary
+        split_index = original_split
+        # Look for assistant message to create natural turn boundary
+        for i in range(split_index, 0, -1):
+            if i < len(non_system_messages) and non_system_messages[i-1].role == "assistant":
+                split_index = i
+                break
 
     messages_to_summarize = non_system_messages[:split_index]
     recent_messages = non_system_messages[split_index:]
